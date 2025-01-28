@@ -13,10 +13,14 @@ this repo uses `sync.Map`
 ```go
 package main
 
-var cache = simplecache.New[int, string](ctx, 0, 0)
+import (
+	"fmt"
+	"github.com/munenari/simplecache"
+)
+
+var cache = simplecache.New[int, string](0, 0)
 
 func main() {
-	var result string
 	fmt.Println(cache.Get(1)) // ""
 	cache.Set(1, "foo")
 	fmt.Println(cache.Get(1)) // "foo"
@@ -30,14 +34,19 @@ func main() {
 ```go
 package main
 
-var cache = simplecache.New[int, string](ctx, 1*time.Second, 1*time.Second)
+import (
+	"fmt"
+	"time"
+	"github.com/munenari/simplecache"
+)
+
+var cache = simplecache.New[int, string](1*time.Second, 1*time.Second)
 
 func main() {
-	var result string
 	fmt.Println(cache.Get(1)) // ""
 	cache.Set(1, "foo")
 	fmt.Println(cache.Get(1)) // "foo"
-	time.Sleep(1*time.Second) // expire
+	time.Sleep(2*time.Second) // expire
 	fmt.Println(cache.Get(1)) // ""
 }
 ```
@@ -47,8 +56,16 @@ func main() {
 ```go
 package main
 
+import (
+	"fmt"
+	"log"
+	"strings"
+	"time"
+	"github.com/munenari/simplecache"
+)
+
 var (
-	cache = simplecache.New[int, string](ctx, 0, 0)
+	cache = simplecache.New[int, string](1*time.Second, 1*time.Second)
 	sf = simplecache.NewSingleflightGroup[int, string]()
 )
 
@@ -79,7 +96,7 @@ func main() {
 			Get(i % 10)
 		}(i)
 	}
-	time.Sleep(1*time.Second)
+	time.Sleep(3*time.Second)
 	for i := 0; i < 10; i++ {
 		Get(i)
 	}
