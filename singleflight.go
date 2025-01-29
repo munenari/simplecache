@@ -3,7 +3,7 @@ package simplecache
 import "sync"
 
 type (
-	singleflightGroup[K, V any] struct {
+	SingleflightGroup[K, V any] struct {
 		lock  *sync.Mutex
 		calls *sync.Map
 	}
@@ -15,14 +15,14 @@ type (
 	}
 )
 
-func NewSingleflightGroup[K, V any]() *singleflightGroup[K, V] {
-	return &singleflightGroup[K, V]{
+func NewSingleflightGroup[K, V any]() *SingleflightGroup[K, V] {
+	return &SingleflightGroup[K, V]{
 		lock:  &sync.Mutex{},
 		calls: &sync.Map{},
 	}
 }
 
-func (x *singleflightGroup[K, V]) Do(key K, fn func() (V, error)) (V, error) {
+func (x *SingleflightGroup[K, V]) Do(key K, fn func() (V, error)) (V, error) {
 	x.lock.Lock()
 	c, ok := loadV[K, *call[V]](x.calls, key)
 	if !ok {

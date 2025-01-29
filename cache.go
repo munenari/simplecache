@@ -7,7 +7,7 @@ import (
 )
 
 type (
-	cache[K, V any] struct {
+	Cache[K, V any] struct {
 		items *sync.Map
 		ttl   time.Duration
 	}
@@ -17,8 +17,8 @@ type (
 	}
 )
 
-func NewWithContext[K, V any](ctx context.Context, ttl, cleanupInterval time.Duration) *cache[K, V] {
-	c := &cache[K, V]{
+func NewWithContext[K, V any](ctx context.Context, ttl, cleanupInterval time.Duration) *Cache[K, V] {
+	c := &Cache[K, V]{
 		items: &sync.Map{},
 		ttl:   ttl,
 	}
@@ -26,11 +26,11 @@ func NewWithContext[K, V any](ctx context.Context, ttl, cleanupInterval time.Dur
 	return c
 }
 
-func New[K, V any](ttl, interval time.Duration) *cache[K, V] {
+func New[K, V any](ttl, interval time.Duration) *Cache[K, V] {
 	return NewWithContext[K, V](context.Background(), ttl, interval)
 }
 
-func (x *cache[K, V]) Set(key K, value V) {
+func (x *Cache[K, V]) Set(key K, value V) {
 	item := item[V]{value: value}
 	if x.ttl != 0 {
 		item.expire = time.Now().Add(x.ttl)
@@ -38,20 +38,20 @@ func (x *cache[K, V]) Set(key K, value V) {
 	x.items.Store(key, item)
 }
 
-func (x *cache[K, V]) Get(key K) (value V, found bool) {
+func (x *Cache[K, V]) Get(key K) (value V, found bool) {
 	item, found := x.load(key)
 	return item.value, found
 }
 
-func (x *cache[K, V]) Delete(key K) {
+func (x *Cache[K, V]) Delete(key K) {
 	x.items.Delete(key)
 }
 
-func (x *cache[K, V]) Clear() {
+func (x *Cache[K, V]) Clear() {
 	x.items.Clear()
 }
 
-func (x *cache[K, V]) load(key K) (i item[V], found bool) {
+func (x *Cache[K, V]) load(key K) (i item[V], found bool) {
 	i, found = loadV[K, item[V]](x.items, key)
 	if i.isExpired(time.Now()) {
 		x.items.Delete(key)
@@ -60,7 +60,7 @@ func (x *cache[K, V]) load(key K) (i item[V], found bool) {
 	return i, found
 }
 
-func (x *cache[K, V]) runCleaner(ctx context.Context, interval time.Duration) {
+func (x *Cache[K, V]) runCleaner(ctx context.Context, interval time.Duration) {
 	if interval == 0 {
 		return
 	}
@@ -76,7 +76,7 @@ func (x *cache[K, V]) runCleaner(ctx context.Context, interval time.Duration) {
 	}
 }
 
-func (x *cache[K, V]) deleteExpired() {
+func (x *Cache[K, V]) deleteExpired() {
 	now := time.Now()
 	x.items.Range(func(key, value any) bool {
 		v, ok := value.(item[V])

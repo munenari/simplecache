@@ -1,6 +1,8 @@
 simple cache
 ====
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/munenari/simplecache.svg)](https://pkg.go.dev/github.com/munenari/simplecache)
+
 ## description
 
 simple (and slow) cache library.
