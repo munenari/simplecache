@@ -10,9 +10,10 @@ import (
 
 func BenchmarkCacheSet(b *testing.B) {
 	cache := simplecache.New[int, int](0, 0)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		cache.Set(i, i)
+	for b.Loop() {
+		for i := range 1000 {
+			cache.Set(i, i)
+		}
 	}
 }
 
@@ -32,8 +33,7 @@ func BenchmarkCacheParallelSet(b *testing.B) {
 	wg := &sync.WaitGroup{}
 	numProcs := runtime.GOMAXPROCS(0)
 
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		for p := range numProcs {
 			wg.Add(1)
 			go func(p int) {
@@ -56,7 +56,7 @@ func BenchmarkCacheParallelGet(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		for p := range numProcs {
 			wg.Add(1)
 			go func(p int) {
