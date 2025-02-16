@@ -1,6 +1,7 @@
 package simplecache_test
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -62,4 +63,12 @@ func TestCacheWithPermanently(t *testing.T) {
 	if v, found := c.Get(1); !found || v != "a" {
 		t.Error("unexpected result", v, found)
 	}
+}
+
+func TestFinalizer(t *testing.T) {
+	cache := simplecache.New[int, string](time.Second, 100*time.Millisecond)
+	cache.Set(0, "a")
+	cache = nil
+	runtime.GC()
+	// t.Error()
 }

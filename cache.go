@@ -1,15 +1,19 @@
 package simplecache
 
 import (
-	"context"
+	"runtime"
 	"sync"
 	"time"
 )
 
 type (
 	Cache[K, V any] struct {
-		items *sync.Map
-		ttl   time.Duration
+		*cache[K, V]
+	}
+	cache[K, V any] struct {
+		items   *sync.Map
+		ttl     time.Duration
+		cleanup chan bool
 	}
 	item[V any] struct {
 		value  V
@@ -17,20 +21,22 @@ type (
 	}
 )
 
-func NewWithContext[K, V any](ctx context.Context, ttl, cleanupInterval time.Duration) *Cache[K, V] {
-	c := &Cache[K, V]{
-		items: &sync.Map{},
-		ttl:   ttl,
+func New[K, V any](ttl, cleanupInterval time.Duration) *Cache[K, V] {
+	c := &cache[K, V]{
+		items:   &sync.Map{},
+		ttl:     ttl,
+		cleanup: make(chan bool),
 	}
-	go c.runCleaner(ctx, cleanupInterval)
-	return c
+	C := &Cache[K, V]{c}
+	go runCleaner(c, cleanupInterval)
+	runtime.AddCleanup(C, func(cc *cache[K, V]) {
+		cc.cleanup <- true
+		cc.Clear()
+	}, c)
+	return C
 }
 
-func New[K, V any](ttl, interval time.Duration) *Cache[K, V] {
-	return NewWithContext[K, V](context.Background(), ttl, interval)
-}
-
-func (x *Cache[K, V]) Set(key K, value V) {
+func (x *cache[K, V]) Set(key K, value V) {
 	item := item[V]{value: value}
 	if x.ttl != 0 {
 		item.expire = time.Now().Add(x.ttl)
@@ -38,20 +44,20 @@ func (x *Cache[K, V]) Set(key K, value V) {
 	x.items.Store(key, item)
 }
 
-func (x *Cache[K, V]) Get(key K) (value V, found bool) {
+func (x *cache[K, V]) Get(key K) (value V, found bool) {
 	item, found := x.load(key)
 	return item.value, found
 }
 
-func (x *Cache[K, V]) Delete(key K) {
+func (x *cache[K, V]) Delete(key K) {
 	x.items.Delete(key)
 }
 
-func (x *Cache[K, V]) Clear() {
+func (x *cache[K, V]) Clear() {
 	x.items.Clear()
 }
 
-func (x *Cache[K, V]) load(key K) (i item[V], found bool) {
+func (x *cache[K, V]) load(key K) (i item[V], found bool) {
 	i, found = loadV[K, item[V]](x.items, key)
 	if i.isExpired(time.Now()) {
 		x.items.Delete(key)
@@ -60,7 +66,7 @@ func (x *Cache[K, V]) load(key K) (i item[V], found bool) {
 	return i, found
 }
 
-func (x *Cache[K, V]) runCleaner(ctx context.Context, interval time.Duration) {
+func runCleaner[K, V any](c *cache[K, V], interval time.Duration) {
 	if interval == 0 {
 		return
 	}
@@ -69,14 +75,14 @@ func (x *Cache[K, V]) runCleaner(ctx context.Context, interval time.Duration) {
 	for {
 		select {
 		case <-t.C:
-			x.deleteExpired()
-		case <-ctx.Done():
+			c.deleteExpired()
+		case <-c.cleanup:
 			return
 		}
 	}
 }
 
-func (x *Cache[K, V]) deleteExpired() {
+func (x *cache[K, V]) deleteExpired() {
 	now := time.Now()
 	x.items.Range(func(key, value any) bool {
 		v, ok := value.(item[V])

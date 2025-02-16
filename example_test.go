@@ -1,7 +1,6 @@
 package simplecache_test
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -18,9 +17,7 @@ func SlowGetter(key int) string {
 }
 
 func TestExample1(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	cache := simplecache.NewWithContext[int, string](ctx, 0, 0)
+	cache := simplecache.New[int, string](0, 0)
 	sf := simplecache.NewSingleflightGroup[int, string]()
 
 	get := func(key int) string {
@@ -50,9 +47,7 @@ func TestExample1(t *testing.T) {
 }
 
 func TestExample2(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	cache := simplecache.NewWithContext[int, string](ctx, 0, 0)
+	cache := simplecache.New[int, string](0, 0)
 
 	get := func(key int) string {
 		v, found := cache.Get(key)
