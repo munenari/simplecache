@@ -21,6 +21,21 @@ type (
 	}
 )
 
+func ValueOf[V any](v any, found bool) (res V, err error) {
+	if !found {
+		return res, ErrNotFound
+	}
+	vv, ok := v.(V)
+	if !ok {
+		err = &ErrInvalidType{Got: v, Expected: res}
+		return res, err
+	}
+	return vv, nil
+}
+
+func NewWithoutExpire[K, V any]() *Cache[K, V] {
+	return New[K, V](0, 0)
+}
 func New[K, V any](ttl, cleanupInterval time.Duration) *Cache[K, V] {
 	c := &cache[K, V]{
 		items:   &sync.Map{},
@@ -36,10 +51,16 @@ func New[K, V any](ttl, cleanupInterval time.Duration) *Cache[K, V] {
 	return C
 }
 
+// Set value in cache with default ttl
 func (x *cache[K, V]) Set(key K, value V) {
+	x.SetEX(key, value, x.ttl)
+}
+
+// SetEX value in cache with onetime ttl
+func (x *cache[K, V]) SetEX(key K, value V, ttl time.Duration) {
 	item := item[V]{value: value}
-	if x.ttl != 0 {
-		item.expire = time.Now().Add(x.ttl)
+	if ttl != 0 {
+		item.expire = time.Now().Add(ttl)
 	}
 	x.items.Store(key, item)
 }

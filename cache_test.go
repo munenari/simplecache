@@ -72,3 +72,18 @@ func TestFinalizer(t *testing.T) {
 	runtime.GC()
 	// t.Error()
 }
+
+func TestCacheAny(t *testing.T) {
+	c := simplecache.New[int, any](3*time.Second, 5*time.Second)
+	c.Set(1, "a")
+	c.Set(2, 3)
+	if v, err := simplecache.ValueOf[string](c.Get(1)); err != nil || v != "a" {
+		t.Error("unexpected result:", v, err)
+	}
+	if v, err := simplecache.ValueOf[int](c.Get(2)); err != nil || v != 3 {
+		t.Error("unexpected result:", v, err)
+	}
+	if v, err := simplecache.ValueOf[string](c.Get(2)); err == nil || v != "" {
+		t.Error("unexpected result:", v, err)
+	}
+}
