@@ -3,6 +3,7 @@ package simplecache
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -23,10 +24,13 @@ type (
 		dir     *os.Root
 		ttl     time.Duration
 		cleanup chan bool
+
+		limitDirSize int64
+		lastDirSize  int64
 	}
 )
 
-func NewFileCache(dir string, ttl, cleanupInterval time.Duration) (*FileCache, error) {
+func NewFileCache(dir string, ttl, statisticInterval time.Duration, dirSizeLimit int64) (*FileCache, error) {
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return nil, err
 	}
@@ -34,14 +38,18 @@ func NewFileCache(dir string, ttl, cleanupInterval time.Duration) (*FileCache, e
 	if err != nil {
 		return nil, err
 	}
+	if dirSizeLimit < 0 {
+		dirSizeLimit = 0
+	}
 	c := &filecache{
-		dir:     r,
-		ttl:     ttl,
-		cleanup: make(chan bool),
+		dir:          r,
+		ttl:          ttl,
+		cleanup:      make(chan bool),
+		limitDirSize: dirSizeLimit,
 	}
 	c.deleteExpired()
 	C := &FileCache{c}
-	go runFileCleaner(c, cleanupInterval)
+	go runFileCleaner(c, statisticInterval)
 	runtime.AddCleanup(C, func(cc *filecache) {
 		cc.cleanup <- true
 		cc.dir.Close()
@@ -50,20 +58,20 @@ func NewFileCache(dir string, ttl, cleanupInterval time.Duration) (*FileCache, e
 }
 
 // Set value in cache with default ttl
-func (x *filecache) Set(keys []string, value []byte) {
+func (x *filecache) Set(keys []any, value []byte) {
 	x.lock.Lock()
 	defer x.lock.Unlock()
 	x.internalMkdirAll(keys)
 	x.internalSet(keys, value)
 }
 
-func (x *filecache) Get(keys []string) (value []byte, found bool) {
+func (x *filecache) Get(keys []any) (value []byte, found bool) {
 	x.lock.RLock()
 	defer x.lock.RUnlock()
 	return x.internalGet(keys)
 }
 
-func (x *filecache) Update(keys []string, fn func(value []byte, found bool) []byte) {
+func (x *filecache) Update(keys []any, fn func(value []byte, found bool) []byte) {
 	x.lock.Lock()
 	defer x.lock.Unlock()
 	v, found := x.internalGet(keys)
@@ -71,19 +79,20 @@ func (x *filecache) Update(keys []string, fn func(value []byte, found bool) []by
 	x.internalSet(keys, setTo)
 }
 
-func (x *filecache) Delete(keys []string) {
+func (x *filecache) Delete(keys []any) {
 	x.lock.Lock()
 	defer x.lock.Unlock()
 	p := x.getFilename(keys)
 	x.dir.Remove(p)
 }
 
-func (x *filecache) internalMkdirAll(keys []string) {
+func (x *filecache) internalMkdirAll(keys []any) {
 	if len(keys) > 1 {
 		mkdir := ""
 		for _, kk := range keys[:len(keys)-1] {
 			mkdir = filepath.Join(mkdir, keyFunc(kk))
-			if info, _ := x.dir.Stat(mkdir); info.IsDir() {
+			info, _ := x.dir.Stat(mkdir)
+			if info != nil && info.IsDir() {
 				continue
 			}
 			if err := x.dir.Mkdir(mkdir, os.ModePerm); err != nil {
@@ -93,7 +102,11 @@ func (x *filecache) internalMkdirAll(keys []string) {
 	}
 }
 
-func (x *filecache) internalSet(keys []string, value []byte) {
+func (x *filecache) internalSet(keys []any, value []byte) {
+	if err := x.checkDirSize(value); err != nil {
+		slog.Info("failed to create a cache file", slog.Any("err", err))
+		return
+	}
 	k := x.getFilename(keys)
 	f, err := x.dir.Create(k)
 	if err != nil {
@@ -104,7 +117,7 @@ func (x *filecache) internalSet(keys []string, value []byte) {
 	f.Write(value)
 }
 
-func (x *filecache) internalGet(keys []string) (value []byte, found bool) {
+func (x *filecache) internalGet(keys []any) (value []byte, found bool) {
 	p := x.getFilename(keys)
 	info, err := x.dir.Stat(p)
 	if err != nil {
@@ -142,13 +155,11 @@ func runFileCleaner(c *filecache, interval time.Duration) {
 }
 
 func (x *filecache) deleteExpired() {
-	if x.ttl == 0 {
-		return
-	}
 	x.lock.Lock()
 	defer x.lock.Unlock()
 	now := time.Now()
 	expireTime := now.Add(-x.ttl)
+	x.lastDirSize = 0
 	fs.WalkDir(x.dir.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -160,20 +171,22 @@ func (x *filecache) deleteExpired() {
 		if err != nil {
 			return err
 		}
-		if info.ModTime().Before(expireTime) {
+		if x.ttl > 0 && info.ModTime().Before(expireTime) {
 			x.dir.Remove(p)
+		} else {
+			x.lastDirSize += info.Size()
 		}
 		return nil
 	})
 }
 
-func keyFunc(key string) string {
+func keyFunc(key any) string {
 	s := sha1.New()
-	io.WriteString(s, key)
+	io.WriteString(s, fmt.Sprintf("%s", key))
 	return hex.EncodeToString(s.Sum(nil))
 }
 
-func keysFunc(keys []string) []string {
+func keysFunc(keys []any) []string {
 	res := make([]string, len(keys))
 	for i, k := range keys {
 		res[i] = keyFunc(k)
@@ -181,6 +194,19 @@ func keysFunc(keys []string) []string {
 	return res
 }
 
-func (x *filecache) getFilename(keys []string) string {
+func (x *filecache) getFilename(keys []any) string {
 	return filepath.Join(keysFunc(keys)...) + ".cache"
+}
+
+func (x *filecache) checkDirSize(want []byte) error {
+	if x.limitDirSize <= 0 {
+		return nil
+	}
+	if x.lastDirSize <= 0 {
+		return nil
+	}
+	if x.lastDirSize+int64(len(want)) > x.limitDirSize {
+		return fmt.Errorf("current dir size: %s", ByteSize(x.lastDirSize))
+	}
+	return nil
 }
