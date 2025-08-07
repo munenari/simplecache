@@ -4,11 +4,10 @@ import "sync"
 
 type (
 	SingleflightGroup[K, V any] struct {
-		lock  *sync.Mutex
-		calls *sync.Map
+		calls sync.Map
 	}
 	call[V any] struct {
-		lock *sync.Mutex
+		lock sync.Mutex
 		done bool
 		v    V
 		err  error
@@ -16,21 +15,12 @@ type (
 )
 
 func NewSingleflightGroup[K, V any]() *SingleflightGroup[K, V] {
-	return &SingleflightGroup[K, V]{
-		lock:  &sync.Mutex{},
-		calls: &sync.Map{},
-	}
+	return &SingleflightGroup[K, V]{}
 }
 
 func (x *SingleflightGroup[K, V]) Do(key K, fn func() (V, error)) (V, error) {
-	x.lock.Lock()
-	c, ok := loadV[K, *call[V]](x.calls, key)
-	if !ok {
-		c = &call[V]{lock: &sync.Mutex{}}
-		x.calls.Store(key, c)
-	}
-	x.lock.Unlock()
-
+	actual, _ := x.calls.LoadOrStore(key, &call[V]{})
+	c := actual.(*call[V])
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if !c.done {

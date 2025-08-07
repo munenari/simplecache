@@ -85,7 +85,7 @@ func ExampleNew() {
 
 func ExampleNewSingleflightGroup() {
 	var (
-		cache = simplecache.New[int, string](2*time.Second, 1*time.Second)
+		cache = simplecache.New[int, string](0, 0)
 		sf    = simplecache.NewSingleflightGroup[int, string]()
 	)
 
